@@ -33,18 +33,9 @@ class ParticleFilter {
 public:
     explicit ParticleFilter(const JsonField &, const char*, state initial_robot_state, size_t particles_amount, int field_half);
     void PassNewOdometry(odometry measurement);
-    void PassNewVision(const char *filename);
+    void PassNewVision(const std::vector<line> &vision_lines);
     static void MistakesToProbability(std::vector<double> &mistakes);
 private:
-    dot ComputeShift(std::chrono::_V2::system_clock::time_point current_time, const dot &new_velocity) const;
-    static double ScoreLine(const state &particle, const line &a, const line &b);
-    static double LineAngle(const line &a, const line &b);
-    static double ComputeAngle(const dot &a, const dot &b);
-    static double AnglePenalty(double angle);
-    static double DistancePenalty(double distance);
-    static double DistanceRobotToLine(const state &particle, const line &b);
-    static double ChooseBestFit(const state &particle, const std::vector<line> &lines_seen,
-            double (*GiveScore)(const state &, const line &, const line &) );
     static void SetToNewSystem(const state &particle, dot &object);
     void LowVarianceResample(size_t particles_count);
 private:

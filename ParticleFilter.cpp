@@ -7,13 +7,24 @@
 state::state(dot pos, double k) : position(pos), angle(k) {}
 state::state() : state(dot(0.0, 0.0), 0.0){}
 
+odometry::odometry(double a1, double a2, double b1, double b2, double c1, double c2, size_t mes_time) {
+    old_x = a1;
+    new_x = a2;
+    old_y = b1;
+    new_y = b2;
+    old_angle = c1;
+    old_angle = c2;
+    time = mes_time;
+}
+
+// config_filename предполагается, что в нём есть данные отклонения одометрии и линии
 ParticleFilter::ParticleFilter(const JsonField &f, const char* config_filename, state initial_robot_state, size_t amount, int field_half)
 : field(f), robot(initial_robot_state), particles_amount(amount), generator(42) {
     // работа с конфигом
     std::freopen(config_filename, "r", stdin);
     Json::Value root;
     std::cin >> root;
-    for(auto &val : root["config_filename"]) {
+    for(auto &val : root["odometry"]) {
         odometry_noise.emplace_back(val.asDouble());
     }
 
@@ -32,7 +43,7 @@ ParticleFilter::ParticleFilter(const JsonField &f, const char* config_filename, 
     }
 }
 
-void ParticleFilter::PassNewVision(const char *filename) {
+void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines) {
 
     for(size_t i = 0; i < particles.size(); ++i) {
 
@@ -94,88 +105,15 @@ void ParticleFilter::MistakesToProbability(std::vector<double> &mistakes) {
     }
 }
 
-double ParticleFilter::ChooseBestFit(const state &particle, const std::vector<line> &lines_seen,
-                                         double (*GiveScore)(const state &, const line &, const line &) ) {
-    // заглушка
-    return 2281337.0;
-}
-
 // координаты точки приводятся к системе координат поля
 void ParticleFilter::SetToNewSystem(const state &particle, dot &object) {
     // поворот - тут матрицу нужно проверить
     dot rotated(
             object.x * cos(particle.angle) + object.y * sin(particle.angle),
             object.x * (-sin(particle.angle)) + object.y * cos(particle.angle)
-            );
+    );
     // параллельный перенос
     object = rotated + particle.position;
-}
-
-// угол между векторами
-double ParticleFilter::ComputeAngle(const dot &a, const dot &b){
-    // http://qaru.site/questions/143580/direct-way-of-computing-clockwise-angle-between-2-vectors
-    double one = a.x * b.x + a.y * b.y;
-    double two = a.x * b.y - a.y * b.x;
-    return atan2(two, one);
-}
-
-// угол между линиями 0 до 90 градусов
-double ParticleFilter::LineAngle(const line &a, const line &b) {
-    double ax = a.first.x - a.second.x;
-    double ay = a.first.y - a.second.y;
-    double bx = b.first.x - b.second.x;
-    double by = b.first.y - b.second.y;
-    double one = fabs(ax * bx + ay * by); // фактически как модуль от косинуса
-    double two = fabs(ax * by - ay * bx); // аналогично модуль от синуса
-    return atan2(two, one);
-}
-
-// расстояние между роботом и линией в глобальной системе координат
-// использовал своё аналитическое решение, которые уже было протестировано в другой задаче
-double ParticleFilter::DistanceRobotToLine(const state &particle, const line &liny) {
-    auto direction = liny.second - liny.first;
-    auto touch = particle.position - liny.first;
-    auto angle_cos = ComputeAngle(touch, direction);
-    auto parameter = touch(direction) / pow(direction.norm(), 2);
-
-    if(direction.norm() < 1e-8 || 0.0 > parameter) {
-        return (liny.first - particle.position).norm();
-    }
-    if(parameter > 1.0) {
-        return (liny.second - particle.position).norm();
-    }
-
-    double sq_cos = pow(angle_cos, 2);
-    double sinus = sq_cos > 1 ? 0 : sqrt(1 - sq_cos);
-
-    return touch.norm() * sinus;
-}
-
-// функции штрафов, можем делать что угодно)
-double ParticleFilter::AnglePenalty(double angle) {
-    return angle * 1e1;
-}
-
-double ParticleFilter::DistancePenalty(double distance) {
-    return distance * 1e1;
-}
-
-// функция для определения "различия" линий
-// штрафуем за разницу направлений линий
-// штрафуем за разницу расстояний от робота до линий
-double ParticleFilter::ScoreLine(const state &particle, const line &a, const line &b) {
-    return AnglePenalty(LineAngle(a, b)) +
-    DistancePenalty(fabs(DistanceRobotToLine(particle, a) - DistanceRobotToLine(particle, b)));
-}
-
-odometry::odometry(double a1, double a2, double b1, double b2, double c1, double c2, size_t mes_time) {
-    old_x = a1;
-    new_x = a2;
-    old_y = b1;
-    new_y = b2;
-    old_angle = c1;
-    old_angle = c2;
-    time = mes_time;
 }
 
 // углы [-pi, pi] от оси абсцисс, система координат с началом в левой нижней точке поля
@@ -205,11 +143,4 @@ void ParticleFilter::PassNewOdometry(odometry od) {
         particle.position.y = particle.position.y + shift_n * sin(particle.angle + rot1_n);
         particle.angle += rot1_n + rot2_n;
     }
-}
-
-// пока что не используется, так как предполагается, что одометрия, приходит уже готовой
-dot ParticleFilter::ComputeShift(std::chrono::_V2::system_clock::time_point current_time, const dot &new_velocity) const {
-    auto millisecs = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - time);
-    double time_in_secs = millisecs.count() * 1e-3;
-    return {velocity.x * time_in_secs, velocity.y * time_in_secs};
 }
