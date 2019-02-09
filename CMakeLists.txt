@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 14)
 
 find_package(Boost)
 
-
 include_directories(${Boost_INCLUDE_DIRS})
 include_directories(${JSONCPP_INCLUDE_DIRS})
 

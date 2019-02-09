@@ -24,11 +24,15 @@ int main() {
 
         robot = state(dot(control_data.new_x, control_data.new_y), control_data.new_angle);
 
+        std::vector<line> vision_lines = filter.TranslateVisionLines(filter.global_system, robot, filter.baselines);
+
+        filter.PassNewVision(vision_lines, control_data);
+
         // добавить видимых линий
 
         if(i % 50 == 0) {
             std::cout << filter.robot.position.x - robot.position.x << " " <<
-            filter.robot.position.y - robot.position.y <<
+            filter.robot.position.y - robot.position.y << " " <<
             filter.robot.angle - robot.angle << std::endl;
         }
     }

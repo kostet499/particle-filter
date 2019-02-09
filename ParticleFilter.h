@@ -7,7 +7,7 @@
 
 #include "vector"
 #include <cmath>
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -109,16 +109,17 @@ public:
     static void MistakesToProbability(std::vector<double> &mistakes);
     double ScoreLines(const line &x, const line &y) const;
     double ScoreMultyLines(const std::vector<line> &lines) const;
-    std::vector<line> TranslateVisionLines(const std::vector<line> &lines, const state &particle) const;
+    std::vector<line> TranslateVisionLines(const state &particle, const state &system, const std::vector<line> &lines) const;
 public:
     boost::taus88 generator;
     state robot;
+    state global_system;
+    std::vector<line> baselines;
 private:
-    static void SetToNewSystem(const state &particle, dot &object);
+    static void SetToNewSystem(const state &system, const state &particle, dot &object);
     void LowVarianceResample(size_t particles_count);
 private:
     std::vector<state> particles;
-    std::vector<line> baselines;
 
     std::vector<double> weights;
     std::vector<double> odometry_noise;

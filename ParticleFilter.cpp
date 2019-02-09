@@ -11,7 +11,7 @@ bool zero_compare(double a, double b) {
 
 // config_filename предполагается, что в нём есть данные отклонения одометрии и линии
 ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_state, size_t amount, int field_half)
-: robot(initial_robot_state), particles_amount(amount), generator(42) {
+: robot(initial_robot_state), particles_amount(amount), generator(42), global_system(dot(0, 0), M_PI / 2) {
     // работа с конфигом
     std::freopen(config_filename, "r", stdin);
     Json::Value root;
@@ -54,7 +54,7 @@ void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines, const 
             weights[i] = 0.0;
             continue;
         }
-        weights[i] = ScoreMultyLines(TranslateVisionLines(vision_lines, particles[i]));
+        weights[i] = ScoreMultyLines(TranslateVisionLines(particles[i], global_system, vision_lines));
     }
 
     MistakesToProbability(weights);
@@ -69,7 +69,7 @@ void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines, const 
     LowVarianceResample(particles_amount);
 }
 
-std::vector<line> ParticleFilter::TranslateVisionLines(const std::vector<line> &lines, const state &particle) const {
+std::vector<line> ParticleFilter::TranslateVisionLines(const state &particle, const state &system, const std::vector<line> &lines) const {
     std::vector<line> result;
 
     for(const auto &liny : lines) {
@@ -86,8 +86,8 @@ std::vector<line> ParticleFilter::TranslateVisionLines(const std::vector<line> &
             b.x = 1.0;
             b.y = -(liny.a + liny.c) / liny.b;
         }
-        SetToNewSystem(particle, a);
-        SetToNewSystem(particle, b);
+        SetToNewSystem(particle, system, a);
+        SetToNewSystem(particle, system, b);
         result.emplace_back(a.x, a.y, b.x, b.y);
     }
 
@@ -169,16 +169,15 @@ void ParticleFilter::MistakesToProbability(std::vector<double> &mistakes) {
 }
 
 // координаты точки приводятся к системе координат поля
-// угол обзора поля от обычно горизонтального положения = pi / 2
-void ParticleFilter::SetToNewSystem(const state &particle, dot &object) {
-    // поворот - тут матрицу нужно проверить
-    double rotate_angle = M_PI / 2  - particle.angle;
+// переводим координаты из системы particle в system (object - объект для перевода в системе координат particle)
+void ParticleFilter::SetToNewSystem(const state &particle, const state &system, dot &object) {
+    double rotate_angle = particle.angle - system.angle;
     dot rotated(
-            object.x * cos(rotate_angle) + object.y * sin(rotate_angle),
-            object.x * (-sin(rotate_angle)) + object.y * cos(rotate_angle)
+            object.x * cos(rotate_angle) - object.y * sin(rotate_angle),
+            object.x * sin(rotate_angle) + object.y * cos(rotate_angle)
     );
     // параллельный перенос
-    object = rotated + particle.position;
+    object = rotated + particle.position - system.position;
 }
 
 // углы [-pi, pi] от оси абсцисс, система координат с началом в левой нижней точке поля
