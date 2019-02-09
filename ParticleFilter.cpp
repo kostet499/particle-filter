@@ -4,22 +4,14 @@
 
 #include "ParticleFilter.h"
 
-state::state(dot pos, double k) : position(pos), angle(k) {}
-state::state() : state(dot(0.0, 0.0), 0.0){}
 
-odometry::odometry(double a1, double a2, double b1, double b2, double c1, double c2, size_t mes_time) {
-    old_x = a1;
-    new_x = a2;
-    old_y = b1;
-    new_y = b2;
-    old_angle = c1;
-    old_angle = c2;
-    time = mes_time;
+bool zero_compare(double a, double b) {
+    return fabs(a - b) < 1e-6;
 }
 
 // config_filename предполагается, что в нём есть данные отклонения одометрии и линии
-ParticleFilter::ParticleFilter(const JsonField &f, const char* config_filename, state initial_robot_state, size_t amount, int field_half)
-: field(f), robot(initial_robot_state), particles_amount(amount), generator(42) {
+ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_state, size_t amount, int field_half)
+: robot(initial_robot_state), particles_amount(amount), generator(42) {
     // работа с конфигом
     std::freopen(config_filename, "r", stdin);
     Json::Value root;
@@ -28,12 +20,21 @@ ParticleFilter::ParticleFilter(const JsonField &f, const char* config_filename, 
         odometry_noise.emplace_back(val.asDouble());
     }
 
+    for(auto &val : root["field"]) {
+        baselines.emplace_back(line(val["x1"].asDouble(), val["y1"].asDouble(), val["x2"].asDouble(), val["y2"].asDouble()));
+        limit_width = std::max(limit_width, std::max(val["x1"].asDouble(), val["x2"].asDouble()));
+        limit_height = std::max(limit_height, std::max(val["x1"].asDouble(), val["x2"].asDouble()));
+    }
+
+    score_angle = root["score_angle"].asDouble();
+    score_distance = root["score_distance"].asDouble();
+
     // раскидываем частички по полю (половине поля)
     weights.resize(particles_amount, 1.0 / particles_amount);
     particles.resize(particles_amount);
 
-    boost::random::uniform_real_distribution<double> x_coord(0.0, field.width());
-    boost::random::uniform_real_distribution<double> y_coord(field_half * field.height() / 2, (field_half + 1.0) * field.height()/ 2);
+    boost::random::uniform_real_distribution<double> x_coord(0.0, limit_width);
+    boost::random::uniform_real_distribution<double> y_coord(field_half * limit_height / 2, (field_half + 1.0) * limit_height / 2);
     boost::random::uniform_real_distribution<double> angle(0.0, 2 * M_PI);
 
     for(auto &particle : particles) {
@@ -43,10 +44,12 @@ ParticleFilter::ParticleFilter(const JsonField &f, const char* config_filename, 
     }
 }
 
-void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines) {
+// vision lines - в системе координат робота
+void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines, const odometry &control_data) {
 
+    PassNewOdometry(control_data);
     for(size_t i = 0; i < particles.size(); ++i) {
-
+        weights[i] = ScoreMultyLines(TranslateVisionLines(vision_lines, particles[i]));
     }
 
     MistakesToProbability(weights);
@@ -59,6 +62,61 @@ void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines) {
     }
 
     LowVarianceResample(particles_amount);
+}
+
+std::vector<line> ParticleFilter::TranslateVisionLines(const std::vector<line> &lines, const state &particle) const {
+    std::vector<line> result;
+
+    for(const auto &liny : lines) {
+        dot a, b;
+        if(zero_compare(liny.b, 0.0)) {
+            a.x = -liny.c / liny.a;
+            b.x = a.x;
+            a.y = 1.0;
+            b.y = 2.0;
+        }
+        else {
+            a.x = 0.0;
+            a.y = -liny.c / liny.b;
+            b.x = 1.0;
+            b.y = -(liny.a + liny.c) / liny.b;
+        }
+        SetToNewSystem(particle, a);
+        SetToNewSystem(particle, b);
+        result.emplace_back(a.x, a.y, b.x, b.y);
+    }
+
+    return result;
+}
+
+// пытаемся совместить типы линии, а потом оцениваем ошибку
+// разность по 'c' - ошибка расстояния
+// ошибка по углу - векторное произведение нормированных направляющих векторов
+
+double ParticleFilter::ScoreLines(const line &x, const line &y) const {
+    double score = 0.0;
+    dot x_vec(-x.b, x.a), y_vec(-y.b, y.a);
+    x_vec = dot(x_vec.x / x_vec.norm(), x_vec.y / x_vec.norm());
+    y_vec = dot(y_vec.x / y_vec.norm(), y_vec.y / y_vec.norm());
+    double square = fabs(x_vec.x * y_vec.y - x_vec.y * y_vec.x);
+
+    score += square * score_angle;
+    score += fabs(y.c - x.c) * score_distance;
+
+    return score;
+}
+
+double ParticleFilter::ScoreMultyLines(const std::vector<line> &lines) const {
+    double score = 0.0;
+    for(const auto &liny : lines) {
+        double min_score = 1000000000;
+        for(const auto &base : baselines) {
+            double cur_score = ScoreLines(liny, base);
+            min_score = std::min(min_score, cur_score);
+        }
+        score += min_score;
+    }
+    return score;
 }
 
 void ParticleFilter::LowVarianceResample(size_t particles_count) {
@@ -106,19 +164,20 @@ void ParticleFilter::MistakesToProbability(std::vector<double> &mistakes) {
 }
 
 // координаты точки приводятся к системе координат поля
+// угол обзора поля от обычно горизонтального положения = pi / 2
 void ParticleFilter::SetToNewSystem(const state &particle, dot &object) {
     // поворот - тут матрицу нужно проверить
+    double rotate_angle = M_PI / 2  - particle.angle;
     dot rotated(
-            object.x * cos(particle.angle) + object.y * sin(particle.angle),
-            object.x * (-sin(particle.angle)) + object.y * cos(particle.angle)
+            object.x * cos(rotate_angle) + object.y * sin(rotate_angle),
+            object.x * (-sin(rotate_angle)) + object.y * cos(rotate_angle)
     );
     // параллельный перенос
     object = rotated + particle.position;
 }
 
 // углы [-pi, pi] от оси абсцисс, система координат с началом в левой нижней точке поля
-void ParticleFilter::PassNewOdometry(odometry od) {
-    auto current_time = std::chrono::system_clock::now();
+void ParticleFilter::PassNewOdometry(const odometry &od) {
     std::vector<state> new_particles(particles.size());
 
     double rot1 = atan2(od.new_y - od.old_y, od.new_x - od.old_x) - od.old_angle;

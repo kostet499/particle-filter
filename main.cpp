@@ -4,7 +4,7 @@
 #include "ParticleFilter.h"
 
 int main() {
-    JsonField kek("../field.json");
+
     return 0;
 }
 
