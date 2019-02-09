@@ -20,15 +20,13 @@ struct odometry {
     double old_x, new_x;
     double old_y, new_y;
     double old_angle, new_angle;
-    size_t time;
-    odometry(double a1, double a2, double b1, double b2, double c1, double c2, size_t mes_time) {
+    odometry(double a1, double a2, double b1, double b2, double c1, double c2) {
         old_x = a1;
         new_x = a2;
         old_y = b1;
         new_y = b2;
         old_angle = c1;
         old_angle = c2;
-        time = mes_time;
     };
 };
 
@@ -112,6 +110,9 @@ public:
     double ScoreLines(const line &x, const line &y) const;
     double ScoreMultyLines(const std::vector<line> &lines) const;
     std::vector<line> TranslateVisionLines(const std::vector<line> &lines, const state &particle) const;
+public:
+    boost::taus88 generator;
+    state robot;
 private:
     static void SetToNewSystem(const state &particle, dot &object);
     void LowVarianceResample(size_t particles_count);
@@ -124,8 +125,6 @@ private:
 
     size_t particles_amount;
 
-    state robot;
-    boost::taus88 generator;
     double limit_height, limit_width;
     double score_angle, score_distance;
 };

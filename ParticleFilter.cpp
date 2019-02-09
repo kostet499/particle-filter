@@ -49,6 +49,11 @@ void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines, const 
 
     PassNewOdometry(control_data);
     for(size_t i = 0; i < particles.size(); ++i) {
+        if(particles[i].position.x < 0 || particles[i].position.y < 0 || particles[i].position.x > limit_width
+        || particles[i].position.y > limit_height) {
+            weights[i] = 0.0;
+            continue;
+        }
         weights[i] = ScoreMultyLines(TranslateVisionLines(vision_lines, particles[i]));
     }
 
@@ -201,5 +206,11 @@ void ParticleFilter::PassNewOdometry(const odometry &od) {
         particle.position.x = particle.position.x + shift_n * cos(particle.angle + rot1_n);
         particle.position.y = particle.position.y + shift_n * sin(particle.angle + rot1_n);
         particle.angle += rot1_n + rot2_n;
+        if(particle.angle > M_PI) {
+            particle.angle -= 2 * M_PI;
+        }
+        else if(particle.angle < -M_PI) {
+            particle.angle += 2 * M_PI;
+        }
     }
 }
