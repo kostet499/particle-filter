@@ -26,7 +26,7 @@ struct odometry {
         old_y = b1;
         new_y = b2;
         old_angle = c1;
-        old_angle = c2;
+        new_angle = c2;
     };
 };
 
@@ -103,7 +103,7 @@ struct state {
 
 class ParticleFilter {
 public:
-    explicit ParticleFilter(const char*, state initial_robot_state, size_t particles_amount, int field_half);
+    explicit ParticleFilter(const char*, state initial_robot_state, int field_half);
     void PassNewOdometry(const odometry &od);
     void PassNewVision(const std::vector<line> &vision_lines, const odometry &control_data);
     static void MistakesToProbability(std::vector<double> &mistakes);
@@ -115,6 +115,7 @@ public:
     state robot;
     state global_system;
     std::vector<line> baselines;
+    double limit_height, limit_width;
 private:
     static void SetToNewSystem(const state &system, const state &particle, dot &object);
     void LowVarianceResample(size_t particles_count);
@@ -126,7 +127,6 @@ private:
 
     size_t particles_amount;
 
-    double limit_height, limit_width;
     double score_angle, score_distance;
 };
 

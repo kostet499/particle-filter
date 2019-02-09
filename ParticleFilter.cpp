@@ -10,8 +10,8 @@ bool zero_compare(double a, double b) {
 }
 
 // config_filename предполагается, что в нём есть данные отклонения одометрии и линии
-ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_state, size_t amount, int field_half)
-: robot(initial_robot_state), particles_amount(amount), generator(42), global_system(dot(0, 0), M_PI / 2) {
+ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_state, int field_half)
+: robot(initial_robot_state), generator(42), global_system(dot(0, 0), M_PI / 2) {
     // работа с конфигом
     std::freopen(config_filename, "r", stdin);
     Json::Value root;
@@ -19,6 +19,8 @@ ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_
     for(auto &val : root["odometry"]) {
         odometry_noise.emplace_back(val.asDouble());
     }
+
+    particles_amount = root["particle_amount"].asInt();
 
     for(auto &val : root["field"]) {
         baselines.emplace_back(line(val["x1"].asDouble(), val["y1"].asDouble(), val["x2"].asDouble(), val["y2"].asDouble()));
@@ -60,7 +62,8 @@ void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines, const 
     MistakesToProbability(weights);
 
     // получаем новую позицию - просто берем среднее по координатам
-    robot.position = dot(0.0, 0.0);
+    robot.position = dot(0, 0);
+    robot.angle = 0;
     for(size_t i = 0; i < particles.size(); ++i) {
         robot.position = robot.position + particles[i].position * weights[i];
         robot.angle += particles[i].angle * weights[i];
@@ -182,7 +185,6 @@ void ParticleFilter::SetToNewSystem(const state &particle, const state &system, 
 
 // углы [-pi, pi] от оси абсцисс, система координат с началом в левой нижней точке поля
 void ParticleFilter::PassNewOdometry(const odometry &od) {
-    std::vector<state> new_particles(particles.size());
 
     double rot1 = atan2(od.new_y - od.old_y, od.new_x - od.old_x) - od.old_angle;
     double shift = dot(od.new_x - od.old_x, od.new_y - od.old_y).norm();
