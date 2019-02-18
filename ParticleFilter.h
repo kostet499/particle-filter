@@ -7,7 +7,7 @@
 
 #include "vector"
 #include <cmath>
-#include <jsoncpp/json/json.h>
+#include <json/json.h>
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -15,6 +15,7 @@
 #include <boost/random/taus88.hpp>
 #include <boost/random/discrete_distribution.hpp>
 #include <boost/random/uniform_real_distribution.hpp>
+#include <assert.h>
 
 struct odometry {
     double old_x, new_x;
@@ -31,7 +32,7 @@ struct odometry {
 };
 
 
-bool zero_compare(double a, double b);
+bool zero_compare(double a);
 
 struct dot {
     double x;
@@ -62,6 +63,13 @@ struct dot {
     double operator()(const dot& a) const {
         return this->x * a.x + this->y * a.y;
     }
+
+    dot rotate(double rotate_angle) {
+        return {
+            x * cos(rotate_angle) - y * sin(rotate_angle),
+            x * sin(rotate_angle) + y * cos(rotate_angle)
+        };
+    }
 };
 
 // ax + by + c = 0 - уравнение прямой
@@ -74,17 +82,17 @@ struct line {
         a(val1), b(val2), c(val3)
     {};
 
-    line(double x_1, double y_1, double x_2, double y_2) {
-        if(zero_compare(x_1, x_2)) {
+    line(const dot &a1, const dot &b2) {
+        if(zero_compare(a1.x - b2.x)) {
             a = -1;
             b = 0;
-            c = x_1;
+            c = a1.x;
         }
         else {
-            double t = (y_2 - y_1) / (x_1 - x_2);
+            double t = (b2.y - a1.y) / (a1.x - b2.x);
             b = -1;
             a = b * t;
-            c = t * x_1 + y_1;
+            c = t * a1.x + a1.y;
         }
     }
 };
@@ -117,7 +125,7 @@ public:
     std::vector<line> baselines;
     double limit_height, limit_width;
 private:
-    static void SetToNewSystem(const state &system, const state &particle, dot &object);
+    void SetToNewSystem(const state &particle, const state &system, dot &object) const;
     void LowVarianceResample(size_t particles_count);
 private:
     std::vector<state> particles;

@@ -5,8 +5,8 @@
 #include "ParticleFilter.h"
 
 
-bool zero_compare(double a, double b) {
-    return fabs(a - b) < 1e-6;
+bool zero_compare(double a) {
+    return fabs(a) < 1e-6;
 }
 
 // config_filename предполагается, что в нём есть данные отклонения одометрии и линии
@@ -23,7 +23,7 @@ ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_
     particles_amount = root["particle_amount"].asInt();
 
     for(auto &val : root["field"]) {
-        baselines.emplace_back(line(val["x1"].asDouble(), val["y1"].asDouble(), val["x2"].asDouble(), val["y2"].asDouble()));
+        baselines.emplace_back(dot(val["x1"].asDouble(), val["y1"].asDouble()), dot(val["x2"].asDouble(), val["y2"].asDouble()));
         limit_width = std::max(limit_width, std::max(val["x1"].asDouble(), val["x2"].asDouble()));
         limit_height = std::max(limit_height, std::max(val["x1"].asDouble(), val["x2"].asDouble()));
     }
@@ -50,16 +50,29 @@ ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_
 void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines, const odometry &control_data) {
 
     PassNewOdometry(control_data);
+    std::vector<int> bad_particles;
+    std::vector<double> good_weights;
+
     for(size_t i = 0; i < particles.size(); ++i) {
         if(particles[i].position.x < 0 || particles[i].position.y < 0 || particles[i].position.x > limit_width
         || particles[i].position.y > limit_height) {
-            weights[i] = 0.0;
+            weights[i] = 0;
+            bad_particles.emplace_back(i);
             continue;
         }
-        weights[i] = ScoreMultyLines(TranslateVisionLines(particles[i], global_system, vision_lines));
+        good_weights.emplace_back(ScoreMultyLines(TranslateVisionLines(particles[i], global_system, vision_lines)));
     }
 
-    MistakesToProbability(weights);
+    MistakesToProbability(good_weights);
+    size_t bad_ind = 0;
+    for(size_t i = 0; i < particles.size(); ++i) {
+        if(bad_ind < bad_particles.size() && bad_particles[bad_ind] == i) {
+            ++bad_ind;
+        }
+        else {
+            weights[i] = good_weights[i - bad_ind];
+        }
+    }
 
     // получаем новую позицию - просто берем среднее по координатам
     robot.position = dot(0, 0);
@@ -77,7 +90,7 @@ std::vector<line> ParticleFilter::TranslateVisionLines(const state &particle, co
 
     for(const auto &liny : lines) {
         dot a, b;
-        if(zero_compare(liny.b, 0.0)) {
+        if(zero_compare(liny.b)) {
             a.x = -liny.c / liny.a;
             b.x = a.x;
             a.y = 1.0;
@@ -91,7 +104,8 @@ std::vector<line> ParticleFilter::TranslateVisionLines(const state &particle, co
         }
         SetToNewSystem(particle, system, a);
         SetToNewSystem(particle, system, b);
-        result.emplace_back(a.x, a.y, b.x, b.y);
+
+        result.emplace_back(a, b);
     }
 
     return result;
@@ -104,8 +118,13 @@ std::vector<line> ParticleFilter::TranslateVisionLines(const state &particle, co
 double ParticleFilter::ScoreLines(const line &x, const line &y) const {
     double score = 0.0;
     dot x_vec(-x.b, x.a), y_vec(-y.b, y.a);
+
     x_vec = dot(x_vec.x / x_vec.norm(), x_vec.y / x_vec.norm());
     y_vec = dot(y_vec.x / y_vec.norm(), y_vec.y / y_vec.norm());
+
+    assert(std::isfinite(x_vec.x));
+    assert(std::isfinite(y_vec.x));
+
     double square = fabs(x_vec.x * y_vec.y - x_vec.y * y_vec.x);
 
     score += square * score_angle;
@@ -165,6 +184,11 @@ void ParticleFilter::MistakesToProbability(std::vector<double> &mistakes) {
     }
     average /= mistakes.size(); // mistakes.size() совпадает с числом частиц
     double coef = (0.0 - 1.0 / mistakes.size()) / (maximum - average);
+
+    if(!std::isfinite(coef)) {
+        assert(std::isfinite(coef));
+    }
+
     double intercept = -maximum * coef;
     for(double &mistake : mistakes) {
         mistake = mistake * coef + intercept;
@@ -173,14 +197,10 @@ void ParticleFilter::MistakesToProbability(std::vector<double> &mistakes) {
 
 // координаты точки приводятся к системе координат поля
 // переводим координаты из системы particle в system (object - объект для перевода в системе координат particle)
-void ParticleFilter::SetToNewSystem(const state &particle, const state &system, dot &object) {
-    double rotate_angle = particle.angle - system.angle;
-    dot rotated(
-            object.x * cos(rotate_angle) - object.y * sin(rotate_angle),
-            object.x * sin(rotate_angle) + object.y * cos(rotate_angle)
-    );
-    // параллельный перенос
-    object = rotated + particle.position - system.position;
+// (все position даны относительно глобальной системы координат)
+void ParticleFilter::SetToNewSystem(const state &particle, const state &system, dot &object) const {
+    object = object.rotate(particle.angle - global_system.angle) + particle.position - system.position;
+    object = object.rotate(global_system.angle - system.angle);
 }
 
 // углы [-pi, pi] от оси абсцисс, система координат с началом в левой нижней точке поля
@@ -195,9 +215,9 @@ void ParticleFilter::PassNewOdometry(const odometry &od) {
     double sigma_rot2 = std::sqrt(odometry_noise[0] * pow(rot2, 2) + odometry_noise[1] * pow(shift, 2));
 
     // гауссовский шум
-    boost::normal_distribution<double> shift_noise(0.0, sigma_shift);
-    boost::normal_distribution<double> rot1_noise(0.0, sigma_rot1);
-    boost::normal_distribution<double> rot2_noise(0.0, sigma_rot2);
+    boost::normal_distribution<double> shift_noise(0, sigma_shift);
+    boost::normal_distribution<double> rot1_noise(0, sigma_rot1);
+    boost::normal_distribution<double> rot2_noise(0, sigma_rot2);
 
     for(auto &particle : particles) {
         double rot1_n = rot1 - rot1_noise(generator);

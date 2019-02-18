@@ -29,16 +29,12 @@ int main() {
         vision_lines.pop_back();
         vision_lines.pop_back();
         filter.PassNewVision(vision_lines, control_data);
-
         // добавить видимых линий
 
-        if(i < 200) {
+        if(i % 100 == 0) {
             printf("%0.1f %0.1f %0.1f \n", fabs(filter.robot.position.x - robot.position.x) / filter.limit_width * 100,
                     fabs(filter.robot.position.y - robot.position.y) / filter.limit_height * 100,
                     fabs(filter.robot.angle - robot.angle) * 50 / M_PI );
-        }
-        else {
-            break;
         }
     }
 
