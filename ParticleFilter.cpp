@@ -6,7 +6,20 @@
 
 
 bool zero_compare(double a) {
-    return fabs(a) < 1e-6;
+    return fabs(a) < 1e-10;
+}
+
+void ParticleFilter::WriteState(const char *filename) const {
+    std::ofstream out(filename);
+    out << "x;y" << std::endl;
+    for(const auto &particle : particles) {
+        out << particle.position.x << ";" << particle.position.y << std::endl;
+    }
+    out.close();
+}
+
+double ParticleFilter::GaussFunction(double x, double m, double s) {
+    return pow(M_E, -pow((x - m) / (sqrt(2) * s), 2));
 }
 
 // config_filename предполагается, что в нём есть данные отклонения одометрии и линии
@@ -21,6 +34,7 @@ ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_
     }
 
     particles_amount = root["particle_amount"].asInt();
+    gauss_mistake = root["gauss_mistake"].asDouble();
 
     for(auto &val : root["field"]) {
         baselines.emplace_back(dot(val["x1"].asDouble(), val["y1"].asDouble()), dot(val["x2"].asDouble(), val["y2"].asDouble()));
@@ -60,7 +74,7 @@ void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines, const 
             bad_particles.emplace_back(i);
             continue;
         }
-        good_weights.emplace_back(ScoreMultyLines(TranslateVisionLines(particles[i], global_system, vision_lines)));
+        good_weights.emplace_back(ScoreMultyLines(particles[i].position, TranslateVisionLines(particles[i], global_system, vision_lines)));
     }
 
     MistakesToProbability(good_weights);
@@ -115,7 +129,7 @@ std::vector<line> ParticleFilter::TranslateVisionLines(const state &particle, co
 // разность по 'c' - ошибка расстояния
 // ошибка по углу - векторное произведение нормированных направляющих векторов
 
-double ParticleFilter::ScoreLines(const line &x, const line &y) const {
+double ParticleFilter::ScoreLines(const dot &pos, const line &x, const line &y) const {
     double score = 0.0;
     dot x_vec(-x.b, x.a), y_vec(-y.b, y.a);
 
@@ -127,21 +141,22 @@ double ParticleFilter::ScoreLines(const line &x, const line &y) const {
 
     double square = fabs(x_vec.x * y_vec.y - x_vec.y * y_vec.x);
 
+    dot rox(-pos.x, (zero_compare(x.b) ? 0 : -x.c / x.b) - pos.y);
+    dot roy(-pos.x, (zero_compare(y.b) ? 0 : -y.c / y.b) - pos.y);
+
+    double to_x = fabs(rox.x * x_vec.y - rox.y * x_vec.x);
+    double to_y = fabs(roy.x * y_vec.y - roy.y * y_vec.x);
+
     score += square * score_angle;
-    score += fabs(y.c - x.c) * score_distance;
+    score += fabs(to_x - to_y) * score_distance;
 
     return score;
 }
 
-double ParticleFilter::ScoreMultyLines(const std::vector<line> &lines) const {
-    double score = 0.0;
-    for(const auto &liny : lines) {
-        double min_score = 1000000000;
-        for(const auto &base : baselines) {
-            double cur_score = ScoreLines(liny, base);
-            min_score = std::min(min_score, cur_score);
-        }
-        score += min_score;
+double ParticleFilter::ScoreMultyLines(const dot &pos, const std::vector<line> &lines) const {
+    double score = 0;
+    for(size_t i = 0; i < lines.size(); ++i) {
+        score += ScoreLines(pos, lines[i], baselines[i]);
     }
     return score;
 }
@@ -167,31 +182,16 @@ void ParticleFilter::LowVarianceResample(size_t particles_count) {
 }
 
 void ParticleFilter::MistakesToProbability(std::vector<double> &mistakes) {
-    // мой первый вариант
-    // введем четыре условия
-    // p - функция вероятности от ошибки
-    // p - линейная функция от ошибки
-    // p(average(mistakes)) = 1 / particles_amount
-    // p(max(mistakes)) = 0
-    // sum p(mistake) by all mistakes = 1
-    // фактически только что я задал прямую по двум точкам, чтобы сумма вероятностей была 1 ))
-
-    double average = 0.0;
-    double maximum = 0.0;
-    for(double &mistake : mistakes) {
-        average += mistake;
-        maximum = std::max(maximum, mistake);
-    }
-    average /= mistakes.size(); // mistakes.size() совпадает с числом частиц
-    double coef = (0.0 - 1.0 / mistakes.size()) / (maximum - average);
-
-    if(!std::isfinite(coef)) {
-        assert(std::isfinite(coef));
+    double sum = 0;
+    for(auto &x : mistakes) {
+        x = GaussFunction(x, 0, gauss_mistake);
+        sum += x;
     }
 
-    double intercept = -maximum * coef;
-    for(double &mistake : mistakes) {
-        mistake = mistake * coef + intercept;
+    assert(!zero_compare(sum));
+
+    for(auto &x : mistakes) {
+        x /= sum;
     }
 }
 

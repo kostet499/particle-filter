@@ -11,6 +11,7 @@
 #include <iostream>
 #include <string>
 #include <chrono>
+#include <fstream>
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/taus88.hpp>
 #include <boost/random/discrete_distribution.hpp>
@@ -114,10 +115,11 @@ public:
     explicit ParticleFilter(const char*, state initial_robot_state, int field_half);
     void PassNewOdometry(const odometry &od);
     void PassNewVision(const std::vector<line> &vision_lines, const odometry &control_data);
-    static void MistakesToProbability(std::vector<double> &mistakes);
-    double ScoreLines(const line &x, const line &y) const;
-    double ScoreMultyLines(const std::vector<line> &lines) const;
+    void MistakesToProbability(std::vector<double> &mistakes);
+    double ScoreLines(const dot &pos, const line &x, const line &y) const;
+    double ScoreMultyLines(const dot &pos, const std::vector<line> &lines) const;
     std::vector<line> TranslateVisionLines(const state &particle, const state &system, const std::vector<line> &lines) const;
+    void WriteState(const char *filename) const;
 public:
     boost::taus88 generator;
     state robot;
@@ -127,6 +129,7 @@ public:
 private:
     void SetToNewSystem(const state &particle, const state &system, dot &object) const;
     void LowVarianceResample(size_t particles_count);
+    double GaussFunction(double x, double m, double s);
 private:
     std::vector<state> particles;
 
@@ -134,6 +137,7 @@ private:
     std::vector<double> odometry_noise;
 
     size_t particles_amount;
+    double gauss_mistake;
 
     double score_angle, score_distance;
 };
