@@ -7,7 +7,7 @@
 
 #include "vector"
 #include <cmath>
-#include <json/json.h>
+#include <jsoncpp/json/json.h>
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -112,7 +112,7 @@ struct state {
 
 class ParticleFilter {
 public:
-    explicit ParticleFilter(const char*, state initial_robot_state, int field_half);
+    explicit ParticleFilter(const char*, int field_half);
     void PassNewOdometry(const odometry &od);
     void PassNewVision(const std::vector<line> &vision_lines, const odometry &control_data);
     void MistakesToProbability(std::vector<double> &mistakes);
@@ -123,11 +123,11 @@ public:
 public:
     boost::taus88 generator;
     state robot;
-    state global_system;
+    static state global_system;
     std::vector<line> baselines;
     double limit_height, limit_width;
+    static void SetToNewSystem(const state &particle, const state &system, dot &object);
 private:
-    void SetToNewSystem(const state &particle, const state &system, dot &object) const;
     void LowVarianceResample(size_t particles_count);
     double GaussFunction(double x, double m, double s);
 private:

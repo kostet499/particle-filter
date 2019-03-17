@@ -5,7 +5,7 @@
 
 int main() {
     state robot(dot(1, 1), 0);
-    ParticleFilter filter("../field.json", robot, 0);
+    ParticleFilter filter("../field.json", 0);
     filter.WriteState("../data.csv");
 
     boost::random::uniform_real_distribution<double> dist(0.2, 0.4);

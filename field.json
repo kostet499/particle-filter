@@ -8,8 +8,8 @@
   ],
   "odometry" : [0.03, 0.03, 0.03, 0.03],
   "step_length" : 1,
-  "score_angle" : 1.5,
-  "score_distance" : 2,
+  "score_angle" : 10,
+  "score_distance" : 10,
   "particle_amount": 200,
   "gauss_mistake" : 3
 }

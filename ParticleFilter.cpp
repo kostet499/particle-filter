@@ -4,6 +4,7 @@
 
 #include "ParticleFilter.h"
 
+state ParticleFilter::global_system(dot(0, 0), M_PI / 2);
 
 bool zero_compare(double a) {
     return fabs(a) < 1e-10;
@@ -12,6 +13,7 @@ bool zero_compare(double a) {
 void ParticleFilter::WriteState(const char *filename) const {
     std::ofstream out(filename);
     out << "x;y" << std::endl;
+    out << robot.position.x << ";" << robot.position.y << std::endl;
     for(const auto &particle : particles) {
         out << particle.position.x << ";" << particle.position.y << std::endl;
     }
@@ -23,8 +25,8 @@ double ParticleFilter::GaussFunction(double x, double m, double s) {
 }
 
 // config_filename предполагается, что в нём есть данные отклонения одометрии и линии
-ParticleFilter::ParticleFilter(const char* config_filename, state initial_robot_state, int field_half)
-: robot(initial_robot_state), generator(42), global_system(dot(0, 0), M_PI / 2) {
+ParticleFilter::ParticleFilter(const char* config_filename, int field_half)
+: generator(42) {
     // работа с конфигом
     std::freopen(config_filename, "r", stdin);
     Json::Value root;
@@ -97,6 +99,7 @@ void ParticleFilter::PassNewVision(const std::vector<line> &vision_lines, const 
     }
 
     LowVarianceResample(particles_amount);
+    WriteState("log.txt");
 }
 
 std::vector<line> ParticleFilter::TranslateVisionLines(const state &particle, const state &system, const std::vector<line> &lines) const {
@@ -156,7 +159,7 @@ double ParticleFilter::ScoreLines(const dot &pos, const line &x, const line &y) 
 double ParticleFilter::ScoreMultyLines(const dot &pos, const std::vector<line> &lines) const {
     double score = 0;
     for(size_t i = 0; i < lines.size(); ++i) {
-        score += ScoreLines(pos, lines[i], baselines[i]);
+        score += ScoreLines(pos, baselines[i], lines[i]);
     }
     return score;
 }
@@ -198,7 +201,7 @@ void ParticleFilter::MistakesToProbability(std::vector<double> &mistakes) {
 // координаты точки приводятся к системе координат поля
 // переводим координаты из системы particle в system (object - объект для перевода в системе координат particle)
 // (все position даны относительно глобальной системы координат)
-void ParticleFilter::SetToNewSystem(const state &particle, const state &system, dot &object) const {
+void ParticleFilter::SetToNewSystem(const state &particle, const state &system, dot &object) {
     object = object.rotate(particle.angle - global_system.angle) + particle.position - system.position;
     object = object.rotate(global_system.angle - system.angle);
 }

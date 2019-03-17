@@ -2,6 +2,9 @@
 # define MY_MODULE_H
 
 #include <alcommon/albroker.h>
+#include "../ParticleFilter.h"
+#include <cmath>
+#inlcude <vector>
 
 namespace AL
 {
@@ -18,7 +21,12 @@ public:
 
   virtual void init();
 
-private:
+  void SetMovement();
 
+  void SetLines(double distance, double angle, double angle_change);
+
+private:
+    ParticleFilter* filter;
+    odometry control_data;
 };
 #endif // MY_MODULE_H
