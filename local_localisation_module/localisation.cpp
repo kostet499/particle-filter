@@ -4,7 +4,7 @@
 
 Localisation::Localisation(boost::shared_ptr<AL::ALBroker> broker,
                    const std::string& name)
-  : AL::ALModule(broker, name)
+  : AL::ALModule(broker, name), memProxy(broker, "ALMemory")
 {
   setModuleDescription("Localisation module");
 
@@ -12,6 +12,13 @@ Localisation::Localisation(boost::shared_ptr<AL::ALBroker> broker,
   functionName("LocalisationMethod", getName(), "some method");
   BIND_METHOD(MyModule::LocalisationMethod);
   */
+
+  functionName("SetLines", getName(), "Provide new vision information to Localisation module and renew position prediction");
+  BIND_METHOD(Localisation::SetLines);
+
+  functionName("SetMovement", getName(), "Provide new movement information");
+  BIND_METHOD(Localisation::SetMovement);
+
 
   /**
    * addParam(<attribut_name>, <attribut_descrption>);
@@ -43,15 +50,34 @@ void Localisation::init()
 }
 
 void Localisation::SetLines() {
-  // somehow transfer lines via memory... and get std::vector of them
+  // we get here 4 vectors (x1-s, y1-s, x2-s, y2-s) of points
+  // block to test
+  std::vector<float> linepoints_x1 =  memProxy.getData("linepoints_x1");
+  std::vector<float> linepoints_y1 =  memProxy.getData("linepoints_y1");
+  std::vector<float> linepoints_x2 =  memProxy.getData("linepoints_x2");
+  std::vector<float> linepoints_y2 =  memProxy.getData("linepoints_y2");
+  // end of block
   std::vector<line> vision_lines_robot;
+  for(size_t i = 0; i < linepoints_x1.size(); ++i) {
+    vision_lines.emplace_back(line(dot(static_cast<double>(linepoints_x1[i]), static_cast<double>(linepoints_y1[i])),
+            dot(static_cast<double >(linepoints_x2[i]), static_cast<double>(linepoints_y2[i]))));
+  }
+
+  // somehow transfer lines via memory... and get std::vector of them
   filter->PassNewVision(vision_lines_robot, control_data);
   control_data.old_x = control_data.new_x;
   control_data.old_y = control_data.new_y;
   control_data.old_angle = control_data.new_angle;
 }
 
-void Localisation::SetMovement(double distance, double angle, double angle_change) {
+void Localisation::SetMovement() {
+  float fl_dist = memProxy.getData("move_distance");
+  float fl_angle = memProxy.getData("move_angle");
+  float fl_an_change = memProxy.getdata("move_angle_change");
+
+  double distance = static_cast<double>(fl_dist);
+  double angle = static_cast<double>(fl_angle);
+  double angle_change = static_cast<double>(fl_an_change);
   // угол в системе отсчёта робота
   dot radius_vector(distance * std::cos(angle), distance * std::sin(angle));
   filter->SetToNewSystem(filter->robot, filter->global_system, radius_vector);

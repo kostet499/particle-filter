@@ -2,6 +2,8 @@
 # define MY_MODULE_H
 
 #include <alcommon/albroker.h>
+#include <alvalue/alvalue.h>
+#include <alproxies/almemory.h>
 #include "../ParticleFilter.h"
 #include <cmath>
 #inlcude <vector>
@@ -23,10 +25,11 @@ public:
 
   void SetMovement();
 
-  void SetLines(double distance, double angle, double angle_change);
+  void SetLines();
 
 private:
     ParticleFilter* filter;
     odometry control_data;
+    AL::ALProxy memProxy;
 };
 #endif // MY_MODULE_H
